@@ -32,8 +32,9 @@ public class Hw1Grp5 {
 	public static String compFunc;
 	public static Double compNum;
 	public static int[] outputCols;
+	public static int outputlen;
 	
-	public static void main(String[] args) throws IOException, URISyntaxException{
+	public static void main(String[] args) throws IOException, URISyntaxException, MasterNotRunningException, ZooKeeperConnectionException{
 		if (args.length != 3){
 			System.out.println("Illegal Input");
 			return ;
@@ -46,67 +47,77 @@ public class Hw1Grp5 {
 		compFunc = parse[2];
 		compNum = Double.valueOf(parse[3]);
 		String[] outputcol = parse[4].split(",");
-		int outputlen = outputcol.length;
+		outputlen = outputcol.length;
 		int[] outputCols = new int[outputlen];
 		for(int i=0; i<outputlen; i++){
 			outputCols[i] = Integer.parseInt(outputcol[i].substring(outputcol[i].indexOf("R")+1));
-		}
-		
-		// DEBUG
-		System.out.println("inputFile: " + inputFile); // hdfs://localhost:9000/hw1-input/input/***.tbl
-		System.out.println("compCol: " + compCol); // 1
-		System.out.println("compFunc: " + compFunc); // gt
-		System.out.println("compNum: " + compNum); // 5.1
-		System.out.println("Output len: " + outputlen); // 3
-		System.out.println("Output Cols: ");
-		for (int q=0; q<outputlen; q++){
-			System.out.println(outputCols[q]); // 2 3 5
 		}
 		
 		// Read HDFS
 		Configuration conf = new Configuration();
 		FileSystem fs = FileSystem.get(URI.create(inputFile), conf);
 		FSDataInputStream in_stream = fs.open(new Path(inputFile));
-		
 		BufferedReader in = new BufferedReader(new InputStreamReader(in_stream));
-		String inputline;
 		
 		// select
+		String inputline = "";
+		String outputline = "";
 		ArrayList<String> outputList = new ArrayList<String>();
 		while ((inputline=in.readLine()) != null) {
-			String[] inputLine = inputline.split("\\|");
-			Double x = Double.valueOf(inputLine[compCol]);
-			
-			// DEBUG
-			System.out.println("inputline: " + inputline);
-			System.out.println("compCol: " + compCol);
-			
-			if(select(x)){
-				String outputLine="";
-				
-				for(int i=0; i<outputlen; i++){
-					outputLine = outputLine + inputLine[outputCols[i]] + "|";
-				}
-				System.out.println("outputLine: " + outputLine);
-				outputList.add(outputLine);
-			}
+			outputline = select(inputline, outputCols);
+			if (outputline != "")
+				outputList.add(outputline);
 		}
 		
 		in.close();
 		fs.close();
-		// sort
 		
-		// distinct
+		// sort and distinct
+		outputList = sort_distinct(outputList);
 		
-		// Write HBase
+		// Create HBase Table
+		Logger.getRootLogger().setLevel(Level.WARN); 
+		HTableDescriptor htd = new HTableDescriptor(TableName.valueOf(outputTable));
+		HColumnDescriptor cf = new HColumnDescriptor(colFamily);
+		htd.addFamily(cf);
+		Configuration configuration = HBaseConfiguration.create();
+		HBaseAdmin hAdmin = new HBaseAdmin(configuration);
 		
+		if (hAdmin.tableExists(outputTable)) {
+			System.out.println("Table already exists");
+			hAdmin.disableTable(outputTable);
+			hAdmin.deleteTable(outputTable);
+			System.out.println("Delete Table success");
+		}
+		
+		hAdmin.createTable(htd);
+		hAdmin.close();
+		System.out.println("Table " + outputTable + " created successfully");
+		
+		// Write HBase Table
+		HTable table = new HTable(configuration,outputTable);
+		int rowNo = 0;
+		for(int i=0; i<outputList.size(); i++){
+			Put put = new Put((rowNo+"").getBytes());
+			outputline = outputList.get(i);
+			String[] outputLine = outputline.split("\\|");
+			
+			for(int j=0; j<outputLine.length; ++j){
+				put.add(colFamily.getBytes(), ("R"+outputCols[j]).getBytes(), outputLine[j].getBytes());
+			}
+			
+			table.put(put);
+			rowNo++;
+		}
+		table.close();
+		System.out.println("Write success");
 		return ;
 	}
 	
 	public static String[] parser(String[] args){
 		// legal command:
-		// java Hw1Grp5 R=<file> select:R1,gt,5.1 distinct:R2,R3,R5
-		// input_file: <file>
+		// java Hw1Grp5 R=/input/distinct_0.tbl select:R1,gt,1.1 distinct:R1
+		// input_file: /input/distinct_0.tbl
 		// comp_col: 1, comp_func: gt, comp_num: 5.1
 		// output_cols: R2,R3,R5
 		
@@ -129,8 +140,23 @@ public class Hw1Grp5 {
 		
 		return parse;
 	}
+	
+	public static String select(String ipline, int[] opCols){
+		String[] ipLine = ipline.split("\\|");
+		Double x = Double.valueOf(ipLine[compCol]);
+		
+		String opLine = "";
+		if(selectx(x)){
+			for(int i=0; i<outputlen; i++){
+				opLine = opLine + ipLine[opCols[i]] + "|";
+			}
+		}
+		
+		return opLine;
+	}
+	
 	// compare x with compNum
-	public static boolean select(double x){
+	public static boolean selectx(double x){
 		if (compFunc.equals("gt"))
 			return (x > compNum);
 		
@@ -150,5 +176,28 @@ public class Hw1Grp5 {
 			return (x < compNum);
 		
 		return false;
+	}
+	
+	public static ArrayList<String> sort_distinct(ArrayList<String> opList){
+		// sort
+		Object[] opSort = opList.toArray();
+		Arrays.sort(opSort);
+		
+		// distinct
+		String opstr_i = opSort[0].toString();
+		String opstr_i_1 = "";
+		opList.clear();
+		opList.add(opstr_i);
+		
+		for(int i=1; i<opSort.length; i++){
+			opstr_i_1 = opstr_i; // = opSort[i-1].toString()
+			opstr_i = opSort[i].toString();
+			
+			if (!opstr_i.equals(opstr_i_1)){
+				opList.add(opstr_i);
+			}
+		}
+		
+		return opList;
 	}
 }
