@@ -1,3 +1,10 @@
+/*******
+* Read from HDFS, sort-based distinct, write hbase
+*
+* @author ShawnYuan
+* @version 1.0
+*/
+
 import java.io.*;
 import java.util.*;
 import java.net.URI;
@@ -33,6 +40,7 @@ public class Hw1Grp5 {
 	public static Double compNum;
 	public static int[] outputCols;
 	public static int outputlen;
+	
 	
 	public static void main(String[] args) throws IOException, URISyntaxException, MasterNotRunningException, ZooKeeperConnectionException{
 		if (args.length != 3){
@@ -114,23 +122,23 @@ public class Hw1Grp5 {
 		return ;
 	}
 	
+	/*******
+	* parse terminal input
+	*
+	* @param args terminal input
+	* @return parse = [input_file, comp_col, comp_func, comp_num, output_cols]
+	*/
 	public static String[] parser(String[] args){
-		// legal command:
-		// java Hw1Grp5 R=/input/distinct_0.tbl select:R1,gt,1.1 distinct:R1
-		// input_file: /input/distinct_0.tbl
-		// comp_col: 1, comp_func: gt, comp_num: 5.1
-		// output_cols: R2,R3,R5
-		
-		// parse = [input_file, comp_col, comp_func, comp_num, output_cols]
 		String[] parse = new String[5];
 		
-		String input_file = args[0].substring(2);
+		// java Hw1Grp5 R=/input/distinct_0.tbl select:R1,gt,1.1 distinct:R0,R1
+		String input_file = args[0].substring(2); // input_file: /input/distinct_0.tbl
 		
-		String comp_col = args[1].substring(args[1].indexOf("R")+1,args[1].indexOf(","));
-		String comp_func = args[1].split(":")[1].split(",")[1];
-		String comp_num = args[1].split(":")[1].split(",")[2];
+		String comp_col = args[1].substring(args[1].indexOf("R")+1,args[1].indexOf(",")); // comp_col: 1
+		String comp_func = args[1].split(":")[1].split(",")[1]; // comp_func: gt
+		String comp_num = args[1].split(":")[1].split(",")[2]; // comp_num: 1.1
 		
-		String output_cols = args[2].split(":")[1];
+		String output_cols = args[2].split(":")[1]; // output_cols: R0,R1
 		
 		parse[0] = input_file;
 		parse[1] = comp_col;
@@ -141,21 +149,33 @@ public class Hw1Grp5 {
 		return parse;
 	}
 	
+	/*******
+	* select rows and columns from the input table
+	*
+	* @param ipline one row from the input table
+	* @param opCols equal to outputCols
+	* @return opline one row to the output table
+	*/
 	public static String select(String ipline, int[] opCols){
 		String[] ipLine = ipline.split("\\|");
 		Double x = Double.valueOf(ipLine[compCol]);
 		
-		String opLine = "";
+		String opline = "";
 		if(selectx(x)){
 			for(int i=0; i<outputlen; i++){
-				opLine = opLine + ipLine[opCols[i]] + "|";
+				opline = opline + ipLine[opCols[i]] + "|";
 			}
 		}
 		
-		return opLine;
+		return opline;
 	}
 	
-	// compare x with compNum
+	/*******
+	* compare x with compNum
+	*
+	* @param x the number to be check
+	* @return boolean whether this row is selected
+	*/
 	public static boolean selectx(double x){
 		if (compFunc.equals("gt"))
 			return (x > compNum);
@@ -178,6 +198,13 @@ public class Hw1Grp5 {
 		return false;
 	}
 	
+	
+	/*******
+	* sort opList and delete redundant rows
+	*
+	* @param opList before sort and distinct
+	* @return opList after sort and distinct
+	*/
 	public static ArrayList<String> sort_distinct(ArrayList<String> opList){
 		// sort
 		Object[] opSort = opList.toArray();
